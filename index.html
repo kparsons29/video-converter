@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Converter</title>
+  <meta name="description" content="Combine video files into one MP4.">
+  <style>
+    :root { color-scheme: dark; --bg:#0b0d12; --panel:#141923; --muted:#9aa6b7; --line:#293243; --accent:#8b7cff; }
+    * { box-sizing:border-box }
+    body { margin:0; min-height:100vh; background:radial-gradient(ellipse at 50% -20%,#252044 0,transparent 55%),var(--bg); color:#f4f6fb; font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; display:grid; place-items:center; padding:28px 16px; }
+    main { width:min(760px,100%); }
+    header { text-align:center; margin-bottom:28px; }
+    .mark { display:inline-grid; place-items:center; width:48px;height:48px;border-radius:15px;background:#282344;color:#c4bcff;font-size:24px;margin-bottom:12px; }
+    h1 { font-size:clamp(30px,6vw,42px); letter-spacing:-1.5px; margin:0 0 8px; }
+    header p,.hint { color:var(--muted); margin:0; }
+    .panel { background:rgba(20,25,35,.94); border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 24px 80px #0005; }
+    .drop { border:1.5px dashed #566078; border-radius:15px; padding:30px 18px; text-align:center; background:#10151f; transition:.2s; }
+    .drop.drag { border-color:var(--accent); background:#201d36; }
+    .upload-icon { font-size:30px; margin-bottom:6px; }
+    input[type=file] { display:none; }
+    .button { border:0; border-radius:11px; background:var(--accent); color:white; font-weight:700; padding:12px 18px; cursor:pointer; font:inherit; }
+    .button:disabled { opacity:.45; cursor:not-allowed; }
+    .secondary { background:#293243; }
+    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:15px; }
+    .file-list { list-style:none; padding:0; margin:18px 0 0; display:grid; gap:8px; }
+    .file-list li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; background:#10151f; border:1px solid var(--line); border-radius:10px; }
+    .file-name { overflow-wrap:anywhere; }
+    .file-size { color:var(--muted); white-space:nowrap; font-size:13px; }
+    .controls { margin-top:20px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    label.checkbox { display:flex; align-items:center; gap:9px; color:#d8deea; font-size:14px; }
+    .status { min-height:24px; margin-top:18px; color:var(--muted); font-size:14px; }
+    progress { width:100%; height:8px; margin-top:10px; accent-color:var(--accent); }
+    .notice { border-top:1px solid var(--line); margin-top:22px; padding-top:17px; color:var(--muted); font-size:12px; }
+    a { color:#c4bcff; }
+    @media(max-width:520px){.panel{padding:16px}.controls{align-items:stretch;flex-direction:column}.controls .button{width:100%}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="mark">▶</div>
+    <h1>Video Converter</h1>
+    <p>Combine your video files into one MP4.</p>
+  </header>
+  <section class="panel">
+    <div class="drop" id="drop">
+      <div class="upload-icon">＋</div>
+      <strong>Drop video files here</strong>
+      <p class="hint">or choose files from your device</p>
+      <div class="row">
+        <button class="button secondary" id="choose">Choose videos</button>
+        <input id="files" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.avi" multiple>
+      </div>
+    </div>
+    <ul class="file-list" id="fileList"></ul>
+    <div class="controls">
+      <label class="checkbox"><input type="checkbox" id="keepOrder" checked> Use the order shown above</label>
+      <button class="button" id="merge" disabled>Combine into MP4</button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">Choose at least one video to begin.</div>
+    <progress id="progress" value="0" max="100" hidden></progress>
+    <div class="notice">
+      This starter version combines video files you own or are authorised to use. It does not download videos from YouTube. Files are temporarily processed by the backend and should be removed after the result is returned.
+    </div>
+  </section>
+</main>
+<script>
+  // After deploying the backend, replace this with its public Railway URL.
+  const API_BASE = "https://YOUR-RAILWAY-APP.up.railway.app";
+
+  const picker = document.getElementById("files");
+  const list = document.getElementById("fileList");
+  const mergeButton = document.getElementById("merge");
+  const statusBox = document.getElementById("status");
+  const progress = document.getElementById("progress");
+  const drop = document.getElementById("drop");
+  let selected = [];
+
+  const formatSize = bytes => {
+    if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`;
+    return `${(bytes/1024/1024).toFixed(1)} MB`;
+  };
+
+  function renderFiles() {
+    list.innerHTML = "";
+    selected.forEach((file, index) => {
+      const item = document.createElement("li");
+      const name = document.createElement("span");
+      name.className = "file-name";
+      name.textContent = `${index + 1}. ${file.name}`;
+      const size = document.createElement("span");
+      size.className = "file-size";
+      size.textContent = formatSize(file.size);
+      item.append(name, size);
+      list.append(item);
+    });
+    mergeButton.disabled = selected.length === 0;
+    statusBox.textContent = selected.length
+      ? `${selected.length} video${selected.length === 1 ? "" : "s"} selected. The list order determines the output order.`
+      : "Choose at least one video to begin.";
+  }
+
+  function addFiles(files) {
+    const incoming = Array.from(files).filter(f => f.type.startsWith("video/") || /\.(mp4|mov|mkv|webm|avi)$/i.test(f.name));
+    selected = [...selected, ...incoming];
+    renderFiles();
+  }
+
+  document.getElementById("choose").addEventListener("click", () => picker.click());
+  picker.addEventListener("change", e => { addFiles(e.target.files); picker.value = ""; });
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("drag"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("drag"); addFiles(e.dataTransfer.files); });
+
+  mergeButton.addEventListener("click", async () => {
+    if (!selected.length) return;
+    if (API_BASE.includes("YOUR-RAILWAY-APP")) {
+      statusBox.textContent = "Backend not connected yet. Deploy the backend and add its Railway URL in index.html.";
+      return;
+    }
+    const form = new FormData();
+    selected.forEach(file => form.append("files", file, file.name));
+    mergeButton.disabled = true;
+    progress.hidden = false;
+    progress.removeAttribute("value");
+    statusBox.textContent = "Uploading and combining videos. Larger files can take a while…";
+    try {
+      const response = await fetch(`${API_BASE}/merge`, { method:"POST", body:form });
+      if (!response.ok) {
+        let message = "The server could not process these files.";
+        try { const data = await response.json(); message = data.detail || message; } catch {}
+        throw new Error(message);
+      }
+      progress.value = 100;
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "combined-video.mp4";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      statusBox.textContent = "Finished — your combined MP4 should be downloading.";
+    } catch (error) {
+      statusBox.textContent = `Error: ${error.message}`;
+    } finally {
+      mergeButton.disabled = false;
+      setTimeout(() => { progress.hidden = true; progress.value = 0; }, 1200);
+    }
+  });
+</script>
+</body>
+</html>
