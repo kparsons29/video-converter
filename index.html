@@ -75,6 +75,11 @@
     progress{width:100%;height:5px;margin-top:4px;accent-color:var(--lime)}
     .notice{margin-top:18px;padding:13px;border-radius:10px;background:#ffffff06;color:#7e899b;font-size:10px;line-height:1.7}
     footer{border-top:1px solid #ffffff12;padding:20px 0 28px;color:#697487;font:10px 'DM Mono',monospace;letter-spacing:.7px;display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap}
+
+    .youtube-card{margin-top:18px;padding:22px;background:linear-gradient(145deg,#151a24,#10141c);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 70px #0004}
+    .youtube-form{display:flex;gap:9px;margin-top:15px}.youtube-form input{min-width:0;flex:1;background:#0d1118;border:1px solid #30394a;border-radius:10px;padding:13px 14px;color:var(--text);font:12px 'DM Mono',monospace;outline:none}.youtube-form input:focus{border-color:var(--lime)}
+    .yt-results{display:grid;gap:9px;margin-top:16px}.yt-item{display:flex;gap:12px;align-items:center;padding:10px;background:#0d1118;border:1px solid #252d3a;border-radius:11px;min-width:0}.yt-item img{width:112px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:#202633}.yt-meta{min-width:0}.yt-title{font-size:12px;font-weight:700;line-height:1.45}.yt-sub{font:10px 'DM Mono',monospace;color:var(--muted);margin-top:5px}.yt-message{font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6}.yt-error{color:var(--red)}
+    @media(max-width:520px){.youtube-form{flex-direction:column}.youtube-form .btn{width:100%}.yt-item img{width:88px}}
     @media(max-width:760px){main{padding:52px 0}.workspace{grid-template-columns:1fr;margin-top:34px}.side{position:static}.shell{width:min(100% - 28px,600px)}h1{letter-spacing:-2.5px}.nav-right{font-size:9px}}
     @media(max-width:430px){nav{height:68px}.upload-card,.side{padding:15px}.drop{min-height:210px}.intro{font-size:14px}.nav-right{letter-spacing:.4px}}
   </style>
@@ -89,6 +94,14 @@
       <div class="eyebrow">01 / Merge studio</div>
       <h1>Your clips.<br><span>One sequence.</span></h1>
       <p class="intro">Bring your videos together in a single, clean MP4. Add your clips, arrange the sequence, and let Frame handle the export.</p>
+
+      <section class="youtube-card" aria-labelledby="youtubeHeading">
+        <div class="card-top"><div class="card-title" id="youtubeHeading">Import from YouTube</div><div class="step">VIDEO OR PLAYLIST URL</div></div>
+        <p class="side-sub" style="margin-bottom:0">Preview video details and playlist contents using YouTube's official API.</p>
+        <form class="youtube-form" id="youtubeForm"><input id="youtubeUrl" type="url" placeholder="Paste a YouTube video or playlist URL…" aria-label="YouTube video or playlist URL" required><button class="btn primary" id="youtubeLookup" type="submit">Preview link ↗</button></form>
+        <div class="yt-message" id="youtubeStatus" role="status" aria-live="polite">You can preview public video and playlist information. YouTube links cannot be converted into downloadable files here.</div>
+        <div class="yt-results" id="youtubeResults"></div>
+      </section>
       <div class="workspace">
         <section class="card upload-card">
           <div class="card-top"><div class="card-title">Add your footage</div><div class="step">STEP 01 — UPLOAD</div></div>
@@ -189,6 +202,34 @@
       statusBox.textContent="Export complete — your combined MP4 is downloading.";
     }catch(error){statusBox.textContent="Export failed: "+error.message}
     finally{mergeButton.disabled=selected.length===0;setTimeout(()=>{progress.hidden=true;progress.value=0},1200)}
+  });
+
+  const youtubeForm=document.getElementById("youtubeForm");
+  const youtubeUrl=document.getElementById("youtubeUrl");
+  const youtubeStatus=document.getElementById("youtubeStatus");
+  const youtubeResults=document.getElementById("youtubeResults");
+  const youtubeLookup=document.getElementById("youtubeLookup");
+  youtubeForm.addEventListener("submit",async event=>{
+    event.preventDefault();
+    const url=youtubeUrl.value.trim();
+    youtubeLookup.disabled=true;youtubeLookup.textContent="Looking up…";
+    youtubeStatus.classList.remove("yt-error");youtubeStatus.textContent="Fetching public video information…";youtubeResults.replaceChildren();
+    try{
+      const response=await fetch(API_BASE+"/youtube/inspect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Could not look up that YouTube URL.");
+      youtubeStatus.textContent=(data.type==="playlist"?"Playlist":"Video")+" preview · "+data.items.length+" item"+(data.items.length===1?"":"s")+". This is metadata only; no video files are downloaded.";
+      data.items.forEach(video=>{
+        const card=document.createElement("div");card.className="yt-item";
+        const image=document.createElement("img");image.src=video.thumbnail||"";image.alt="";image.loading="lazy";
+        const meta=document.createElement("div");meta.className="yt-meta";
+        const title=document.createElement("div");title.className="yt-title";title.textContent=video.title;
+        const sub=document.createElement("div");sub.className="yt-sub";sub.textContent=(video.channelTitle||"YouTube")+(video.duration?" · "+video.duration:"");
+        const link=document.createElement("a");link.href="https://www.youtube.com/watch?v="+encodeURIComponent(video.videoId);link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open on YouTube ↗";link.style.cssText="display:inline-block;margin-top:6px;color:var(--lime);font-size:10px;text-decoration:none";
+        meta.append(title,sub,link);card.append(image,meta);youtubeResults.append(card);
+      });
+    }catch(error){youtubeStatus.classList.add("yt-error");youtubeStatus.textContent=error.message;}
+    finally{youtubeLookup.disabled=false;youtubeLookup.textContent="Preview link ↗";}
   });
   renderFiles();
 </script>
